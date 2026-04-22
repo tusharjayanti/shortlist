@@ -1,0 +1,142 @@
+llm:
+  provider: anthropic
+  model: claude-sonnet-4-6
+  max_tokens: 4096
+  temperature: 0.3
+
+candidate:
+  name: Test Engineer
+  experience_years: 7
+  location:
+    primary: Bengaluru
+    aliases:
+      - Bengaluru
+      - Bangalore
+      - bengaluru
+  min_salary_lpa: 40
+  max_salary_lpa: 80
+  roles:
+    - Senior Software Engineer
+    - Staff Engineer
+  languages:
+    - Python
+    - Go
+  backend:
+    - gRPC
+    - Kafka
+  databases:
+    - PostgreSQL
+    - Redis
+  cloud_devops:
+    - AWS
+    - Docker
+  strengths:
+    - Distributed systems
+    - System design
+
+archetypes:
+  distributed_systems:
+    lead_with: "distributed systems, high availability, performance"
+    proof_points:
+      - "Reduced p99 latency by 40% at Acme"
+      - "Built event-driven system handling 50k events/sec"
+
+  founding_engineer:
+    lead_with: "0 to 1, ambiguity, full-stack system design"
+    proof_points:
+      - "First engineer — built backend from scratch"
+      - "Shipped MVP in 3 months solo"
+
+seniority:
+  target_level: senior
+  levels:
+    senior:
+      canonical: Senior Software Engineer
+      score_bonus: 0
+      patterns:
+        - senior
+        - sr.
+        - staff
+    mid:
+      canonical: Software Engineer
+      score_penalty: 1
+      patterns:
+        - software engineer
+        - sde ii
+    junior:
+      canonical: Junior Software Engineer
+      score_penalty: 3
+      patterns:
+        - junior
+        - associate
+        - sde i
+  startup_inference:
+    senior_signals:
+      - "lead"
+      - "own"
+      - "architect"
+    mid_signals:
+      - "build"
+      - "develop"
+    junior_signals:
+      - "learn"
+      - "assist"
+
+companies:
+  big_tech:
+    tier_1:
+      score_bonus: 3
+      reason: "Top engineering culture"
+      names:
+        - Google
+        - Stripe
+
+    tier_2:
+      score_bonus: 1
+      reason: "Good companies, score on role fit"
+      names:
+        - Atlassian
+        - Datadog
+
+    tier_3:
+      score_bonus: -99
+      reason: "Blacklisted — never surfaced"
+      names:
+        - Sketchy Corp
+
+  startups:
+    min_funding: Series A
+    max_stage: Series C
+    score_bonus: 0
+
+scoring:
+  minimum_score: 7
+  weights:
+    role_fit: 4
+    skills_alignment: 4
+    seniority_fit: 2
+    salary_signal: 2
+    interview_likelihood: 2
+    growth_trajectory: 1
+    product_domain_fit: 1
+    timeline: 1
+
+sources:
+  ats:
+    greenhouse:
+      - razorpay.com
+    ashby: []
+    lever: []
+  wellfound:
+    api_key: test_key
+  rss:
+    - https://careers.example.com/rss
+  scraping:
+    allowed_domains:
+      - razorpay.com
+      - phonepe.com
+    delay_seconds: 2.0
+    min_delay: 0.5
+    max_delay: 8.0
+    user_agents:
+      - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
