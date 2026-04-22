@@ -5,7 +5,10 @@ import os
 import time
 from abc import ABC, abstractmethod
 
+from dotenv import load_dotenv
 from pydantic import BaseModel
+
+load_dotenv()
 
 
 class LLMError(Exception):
@@ -52,7 +55,10 @@ class AnthropicProvider(LLMProvider):
         import anthropic
         from anthropic import APIStatusError
 
-        client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            raise LLMError("ANTHROPIC_API_KEY not set in environment")
+        client = anthropic.Anthropic(api_key=api_key)
         kwargs: dict = {
             "model": self._model,
             "max_tokens": max_tokens,

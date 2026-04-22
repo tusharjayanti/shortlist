@@ -26,13 +26,19 @@ def audited(agent_name: str, action: str):
                 output_summary = textwrap.shorten(
                     str(result), width=300, placeholder="..."
                 )
+                llm_resp = getattr(self, "_last_llm_response", None)
+                tokens_used = (
+                    llm_resp.input_tokens + llm_resp.output_tokens
+                    if llm_resp is not None
+                    else None
+                )
                 self.tracker.log(
                     app_id=app_id,
                     agent=agent_name,
                     action=action,
                     input_summary=input_summary,
                     output_summary=output_summary if success else None,
-                    tokens_used=None,
+                    tokens_used=tokens_used,
                     latency_ms=latency_ms,
                     success=success,
                     error=error,
