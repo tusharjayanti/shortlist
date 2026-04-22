@@ -1,0 +1,190 @@
+# Job Search Copilot — example configuration
+# Copy this file: cp config.example.yaml config.yaml
+# Fill in your real values in config.yaml
+# config.yaml is gitignored — never commit it
+
+# ── LLM provider ──────────────────────────────────────────
+llm:
+  provider: anthropic          # anthropic | gemini | openai
+  model: claude-sonnet-4-5
+  max_tokens: 4096
+  temperature: 0.3
+
+# ── Your profile ──────────────────────────────────────────
+candidate:
+  name: Your Name
+  experience_years: 5
+  location: Bangalore
+  min_salary_lpa: 30
+  max_salary_lpa: 60
+
+  roles:
+    - Senior Software Engineer
+    - Senior Backend Engineer
+    - Platform Engineer
+
+  languages:
+    - Java
+    - Python
+    - JavaScript
+
+  backend:
+    - Spring Boot
+    - REST
+    - Kafka
+    - Microservices
+
+  databases:
+    - PostgreSQL
+    - Redis
+    - MongoDB
+
+  cloud_devops:
+    - AWS
+    - Docker
+    - Kubernetes
+    - Terraform
+
+  data:
+    - Apache Airflow
+    - Batch Processing
+
+  ai_tools:
+    - GitHub Copilot
+    - LLM integration
+
+  strengths:
+    - Distributed systems
+    - Performance optimization
+    - System design
+
+# ── Archetypes ────────────────────────────────────────────
+archetypes:
+  distributed_systems:
+    lead_with: "distributed systems, high availability, performance"
+    proof_points:
+      - "Reduced p99 latency by X% at [Company]"
+      - "Built event-driven architecture handling Xk events/sec"
+
+  identity_platform:
+    lead_with: "identity systems, auth, platform migration"
+    proof_points:
+      - "Led migration of identity platform at [Company]"
+      - "Built gRPC service-to-service auth layer"
+
+  data_engineering:
+    lead_with: "data pipelines, batch processing, orchestration"
+    proof_points:
+      - "Built Airflow pipelines processing X records/day"
+      - "Reduced SQL query latency by Xx"
+
+  ai_ml_engineer:
+    lead_with: "LLM integration, AI-assisted development, agents"
+    proof_points:
+      - "Built multi-agent system with Claude"
+      - "Integrated LLMs into production workflows"
+
+  fintech_platform:
+    lead_with: "financial systems, high-throughput transactions"
+    proof_points:
+      - "Engineered system handling Xk daily transactions"
+      - "Built payment processing pipeline"
+
+  founding_engineer:
+    lead_with: "0 to 1, ambiguity, full-stack system design"
+    proof_points:
+      - "Architected backend from scratch at [Company]"
+      - "First engineer — built X, Y, Z systems"
+
+# ── Company tiers ─────────────────────────────────────────
+companies:
+  big_tech:
+    tier_1:
+      score_bonus: 3
+      reason: "Top engineering culture, pay at ceiling of target band"
+      names:
+        - Google
+        - Microsoft
+        - Amazon
+        - Meta
+        - Apple
+        - Stripe
+        - Databricks
+        - Snowflake
+        - LinkedIn
+        - DE Shaw
+        - Tower Research Capital
+        - Jane Street
+
+    tier_2:
+      score_bonus: 1
+      reason: "Good companies, score on role fit"
+      names:
+        - Adobe
+        - Salesforce
+        - Atlassian
+        - ServiceNow
+        - Workday
+        - Confluent
+        - MongoDB
+        - Elastic
+        - Datadog
+        - Grafana Labs
+        - HashiCorp
+        - Cloudflare
+
+    tier_3:
+      score_bonus: -99
+      reason: "Blacklisted — never surfaced"
+      names:
+        - Example Distressed Company
+
+  startups:
+    min_funding: Series A
+    max_stage: Series C
+    score_bonus: 0
+    sources:
+      - Wellfound
+      - Cutshort
+      - Instahyre
+
+# ── Scoring ───────────────────────────────────────────────
+scoring:
+  minimum_score: 7
+  weights:
+    role_fit: 4                # gate-pass (0-4)
+    skills_alignment: 4        # gate-pass (0-4)
+    seniority_fit: 2
+    salary_signal: 2
+    interview_likelihood: 2
+    growth_trajectory: 1
+    product_domain_fit: 1
+    timeline: 1
+
+# ── Sources ───────────────────────────────────────────────
+sources:
+  adzuna:
+    app_id: YOUR_ADZUNA_APP_ID
+    app_key: YOUR_ADZUNA_APP_KEY
+    results_per_page: 50
+
+  wellfound:
+    api_key: YOUR_WELLFOUND_API_KEY
+
+  rss:
+    - https://careers.google.com/jobs/results/?location=Bangalore&format=rss
+    - https://careers.atlassian.com/rss
+
+  scraping:
+    allowed_domains:
+      - razorpay.com
+      - phonepe.com
+      - flipkart.com
+      - careers.cred.club
+    delay_seconds: 2.0
+    min_delay: 0.5
+    max_delay: 8.0
+    user_agents:
+      - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
+      - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
