@@ -10,6 +10,21 @@ class GreenhouseNotFound(Exception):
     pass
 
 
+_SLUG_SPECIAL_CASES = {
+    "razorpaysoftwareprivatelimited": "Razorpay",
+    "cockroachlabs": "Cockroach Labs",
+    "newrelic": "New Relic",
+    "linkedin": "LinkedIn",
+    "dropbox": "Dropbox",
+}
+
+
+def slug_to_company_name(slug: str, ats_type: str = "") -> str:
+    if slug in _SLUG_SPECIAL_CASES:
+        return _SLUG_SPECIAL_CASES[slug]
+    return slug.replace("-", " ").replace("_", " ").title()
+
+
 def scan_greenhouse(slug: str) -> list[dict]:
     url = f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
     try:
@@ -25,9 +40,11 @@ def scan_greenhouse(slug: str) -> list[dict]:
         console.print(f"[yellow]greenhouse/{slug}: HTTP {resp.status_code}[/yellow]")
         return []
 
+    company = slug_to_company_name(slug, "greenhouse")
     return [
         {
             "title": job.get("title", ""),
+            "company": company,
             "location": job.get("location", {}).get("name", ""),
             "url": job.get("absolute_url", ""),
             "updated_at": job.get("updated_at", ""),
@@ -37,14 +54,18 @@ def scan_greenhouse(slug: str) -> list[dict]:
     ]
 
 
+def _ashby_location(value) -> str:
+    if not value:
+        return ""
+    if isinstance(value, dict):
+        return value.get("name", "")
+    return str(value)
+
+
 def scan_ashby(slug: str) -> list[dict]:
-    url = "https://jobs.ashbyhq.com/api/non-user-facing/job-board/listing"
+    url = f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
     try:
-        resp = httpx.get(
-            url,
-            params={"organizationHostedJobsPageName": slug},
-            timeout=15.0,
-        )
+        resp = httpx.get(url, timeout=15.0)
     except httpx.RequestError as e:
         console.print(f"[yellow]ashby/{slug}: request error: {e}[/yellow]")
         return []
@@ -52,15 +73,18 @@ def scan_ashby(slug: str) -> list[dict]:
     if resp.status_code != 200:
         return []
 
+    company = slug_to_company_name(slug, "ashby")
     return [
         {
             "title": job.get("title", ""),
-            "location": job.get("location", ""),
-            "url": f"https://jobs.ashbyhq.com/{slug}/{job.get('id', '')}",
-            "updated_at": job.get("updatedAt", ""),
+            "company": company,
+            "url": job.get("jobUrl", ""),
+            "location": _ashby_location(job.get("location")),
+            "updated_at": job.get("publishedAt", ""),
+            "description": (job.get("descriptionPlain") or "")[:500],
             "source": "ashby",
         }
-        for job in resp.json().get("jobPostings", [])
+        for job in resp.json().get("jobs", [])
     ]
 
 
@@ -78,9 +102,11 @@ def scan_lever(slug: str) -> list[dict]:
     if resp.status_code != 200:
         return []
 
+    company = slug_to_company_name(slug, "lever")
     return [
         {
             "title": job.get("text", ""),
+            "company": company,
             "location": job.get("categories", {}).get("location", ""),
             "url": job.get("hostedUrl", ""),
             "updated_at": str(job.get("createdAt", "")),

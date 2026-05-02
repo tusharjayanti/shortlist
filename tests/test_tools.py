@@ -11,6 +11,7 @@ from tools.ats_scanner import (
     scan_ashby,
     scan_greenhouse,
     scan_lever,
+    slug_to_company_name,
 )
 from tools.browser import open_job_page
 from tools.compiler import check_pdflatex_available, compile_pdf
@@ -79,6 +80,33 @@ def test_scan_greenhouse_parses_response():
 
 
 @respx.mock
+def test_scan_greenhouse_sets_company_field():
+    respx.get("https://boards-api.greenhouse.io/v1/boards/databricks/jobs").mock(
+        return_value=httpx.Response(200, json={
+            "jobs": [
+                {"title": "SWE", "location": {"name": "Bengaluru"},
+                 "absolute_url": "https://boards.greenhouse.io/databricks/jobs/1",
+                 "updated_at": "2026-04-01"},
+                {"title": "Staff SWE", "location": {"name": "Remote"},
+                 "absolute_url": "https://boards.greenhouse.io/databricks/jobs/2",
+                 "updated_at": "2026-04-02"},
+            ]
+        })
+    )
+    jobs = scan_greenhouse("databricks")
+    assert len(jobs) == 2
+    assert all(j["company"] == "Databricks" for j in jobs)
+
+
+def test_slug_to_company_name_handles_special_cases():
+    assert slug_to_company_name("razorpaysoftwareprivatelimited") == "Razorpay"
+    assert slug_to_company_name("cockroachlabs") == "Cockroach Labs"
+    assert slug_to_company_name("newrelic") == "New Relic"
+    assert slug_to_company_name("databricks") == "Databricks"
+    assert slug_to_company_name("cred-club") == "Cred Club"
+
+
+@respx.mock
 def test_scan_greenhouse_404_returns_empty():
     respx.get("https://boards-api.greenhouse.io/v1/boards/missing/jobs").mock(
         return_value=httpx.Response(404)
@@ -91,14 +119,16 @@ def test_scan_greenhouse_404_returns_empty():
 
 @respx.mock
 def test_scan_ashby_parses_response():
-    respx.get("https://jobs.ashbyhq.com/api/non-user-facing/job-board/listing").mock(
+    respx.get("https://api.ashbyhq.com/posting-api/job-board/acme").mock(
         return_value=httpx.Response(200, json={
-            "jobPostings": [
+            "jobs": [
                 {
                     "title": "Staff Engineer",
                     "location": "Bengaluru",
-                    "id": "abc123",
-                    "updatedAt": "2026-04-01",
+                    "department": "Engineering",
+                    "jobUrl": "https://jobs.ashbyhq.com/acme/abc123",
+                    "publishedAt": "2026-04-01T00:00:00Z",
+                    "descriptionPlain": "Build cool things.",
                 }
             ]
         })
@@ -107,7 +137,9 @@ def test_scan_ashby_parses_response():
     assert len(jobs) == 1
     assert jobs[0]["title"] == "Staff Engineer"
     assert jobs[0]["url"] == "https://jobs.ashbyhq.com/acme/abc123"
+    assert jobs[0]["updated_at"] == "2026-04-01T00:00:00Z"
     assert jobs[0]["source"] == "ashby"
+    assert jobs[0]["description"] == "Build cool things."
 
 
 # ── ats_scanner: lever ───────────────────────────────────────────────────────
