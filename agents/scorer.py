@@ -122,7 +122,7 @@ Job description:
 """
 
 
-def _strip_fences(text: str) -> str:
+def _extract_json(text: str) -> str:
     """Remove markdown code fences that some LLMs add despite instructions."""
     text = text.strip()
     if text.startswith("```"):
@@ -228,7 +228,7 @@ class ScorerAgent:
             self._last_llm_response = response
 
             try:
-                parsed = json.loads(_strip_fences(response.text))
+                parsed = json.loads(_extract_json(response.text))
                 return self._build_job_score(parsed, tier_bonus)
             except (json.JSONDecodeError, ValidationError, KeyError) as e:
                 last_error = e

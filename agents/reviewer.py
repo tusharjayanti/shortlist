@@ -2,7 +2,7 @@ import json
 
 from pydantic import ValidationError
 
-from agents.scorer import _strip_fences
+from agents.scorer import _extract_json
 from tools.config_loader import Config
 from tools.llm import get_active_llm
 from tools.schemas import ReviewResult
@@ -138,7 +138,7 @@ class ReviewerAgent:
             self._last_llm_response = response
 
             try:
-                parsed = json.loads(_strip_fences(response.text))
+                parsed = json.loads(_extract_json(response.text))
                 return ReviewResult(**parsed)
             except (json.JSONDecodeError, ValidationError, KeyError) as e:
                 last_error = e

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agents.scorer import ScorerAgent, _strip_fences
+from agents.scorer import ScorerAgent, _extract_json
 from tools.config_loader import (
     ATSConfig,
     ArchetypeConfig,
@@ -268,19 +268,19 @@ def test_scorer_raises_after_max_retries(
     assert mock_llm.complete.call_count == 3
 
 
-# ── _strip_fences ─────────────────────────────────────────────────────────────
+# ── _extract_json ─────────────────────────────────────────────────────────────
 
-def test_strip_fences_removes_json_code_block():
-    assert _strip_fences("```json\n{\"key\": 1}\n```") == '{"key": 1}'
-
-
-def test_strip_fences_removes_plain_code_block():
-    assert _strip_fences("```\n{\"key\": 1}\n```") == '{"key": 1}'
+def test_extract_json_removes_json_code_block():
+    assert _extract_json("```json\n{\"key\": 1}\n```") == '{"key": 1}'
 
 
-def test_strip_fences_passthrough_for_bare_json():
+def test_extract_json_removes_plain_code_block():
+    assert _extract_json("```\n{\"key\": 1}\n```") == '{"key": 1}'
+
+
+def test_extract_json_passthrough_for_bare_json():
     raw = '{"key": 1}'
-    assert _strip_fences(raw) == raw
+    assert _extract_json(raw) == raw
 
 
 def test_scorer_logs_token_counts(
