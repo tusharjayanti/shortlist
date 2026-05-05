@@ -91,7 +91,6 @@ class ScrapingConfig(BaseModel):
 
 class SourcesConfig(BaseModel):
     ats: ATSConfig
-    wellfound: dict[str, Any] = {}
     rss: list[str] = []
     scraping: ScrapingConfig
 

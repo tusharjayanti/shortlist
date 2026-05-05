@@ -212,3 +212,4 @@ config.yaml
 resume/
 output/
 data/
+.DS_Store

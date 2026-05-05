@@ -144,7 +144,6 @@ companies:
     max_stage: Series C
     score_bonus: 0
     sources:
-      - Wellfound
       - Cutshort
       - Instahyre
 
@@ -168,8 +167,32 @@ sources:
     app_key: YOUR_ADZUNA_APP_KEY
     results_per_page: 50
 
-  wellfound:
-    api_key: YOUR_WELLFOUND_API_KEY
+  # Zero-token ATS scanner — hits APIs directly, no LLM needed
+  ats:
+    greenhouse:
+      # Verified working slugs as of 2026-04-22
+      # Verify any new slug at:
+      # https://boards-api.greenhouse.io/v1/boards/{slug}/jobs
+      - databricks
+      - okta
+      - cloudflare
+      - linkedin
+      - stripe
+      - dropbox
+      - airbnb
+      - coinbase
+      - rubrik
+      - razorpaysoftwareprivatelimited
+      - cockroachlabs
+      - newrelic
+
+    ashby:
+      - linear
+      - retool
+      - loom
+      - mercury
+
+    lever: []
 
   rss:
     - https://careers.google.com/jobs/results/?location=Bangalore&format=rss
@@ -188,3 +211,14 @@ sources:
       - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
       - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15"
       - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+# Companies without public ATS APIs.
+# Deferred to DiscoveryAgent (v1.1).
+# Evaluate roles here via reactive mode (paste URL) for now.
+websearch_candidates:
+  - name: Example Company A
+    careers_url: https://example.com/careers
+    notes: "Why this company can't be reached via API (e.g. Workday-hosted, custom page)"
+  - name: Example Company B
+    careers_url: https://another-example.com/jobs
+    notes: "Internal ATS, no public API"

@@ -131,28 +131,22 @@ class FinderAgent:
         }
 
     def _filter_unseen(self, jobs: list[dict], source_label: str) -> list[dict]:
-        """
-        Remove jobs whose URL is already in seen_urls.
-        Mark each new URL as seen as it passes through.
-        """
-        new_jobs = []
-        for job in jobs:
-            url = job.get("url", "")
-            if not url:
-                continue
-            if self.tracker.is_seen_url(url):
-                continue
-            self.tracker.mark_url_seen(url, source=source_label)
-            new_jobs.append(job)
-        return new_jobs
+        """Remove jobs whose URL is already in seen_urls. Does NOT mark — see _finalize."""
+        return [
+            j for j in jobs
+            if j.get("url") and not self.tracker.is_seen_url(j["url"])
+        ]
 
     def _finalize(self, jobs: list[dict]) -> list[dict]:
         """
         Final pass across all sources:
-          1. Deduplicate by URL (job may appear in multiple sources)
-          2. Remove blacklisted companies (Tier 3)
+          1. Drop jobs missing 'company'
+          2. Deduplicate by URL (job may appear in multiple sources)
+          3. Remove blacklisted companies (Tier 3)
+          4. Mark surviving URLs as seen — only jobs that reach the user
+             enter seen_urls, so a future bug can't silently bury postings.
         """
-        seen_urls: set[str] = set()
+        seen_in_run: set[str] = set()
         final = []
         for job in jobs:
             url = job.get("url", "")
@@ -160,12 +154,15 @@ class FinderAgent:
             if not company.strip():
                 logging.debug(f"finder: skipping job with no company: {url}")
                 continue
-            if url in seen_urls:
+            if url in seen_in_run:
                 continue
-            seen_urls.add(url)
+            seen_in_run.add(url)
             if self.config.is_blacklisted(company):
                 continue
             final.append(job)
+
+        for job in final:
+            self.tracker.mark_url_seen(job["url"], source=job.get("source", "unknown"))
         return final
 
     def _extract_company_from_feed(self, feed_url: str) -> str:

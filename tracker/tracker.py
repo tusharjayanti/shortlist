@@ -88,6 +88,16 @@ class JobTracker:
                     (url, source),
                 )
 
+    def prune_orphan_seen_urls(self) -> int:
+        """Delete seen_urls rows whose URL is not referenced by any application."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM seen_urls "
+                    "WHERE url NOT IN (SELECT job_url FROM applications)"
+                )
+                return cur.rowcount
+
     def save_resume_version(
         self,
         app_id: str,
@@ -149,6 +159,16 @@ class JobTracker:
                         tokens_used, latency_ms, success, error,
                     ),
                 )
+
+    def get_audit_logs_by_agent(self, agent_name: str) -> list[dict]:
+        """Return all audit log entries for a given agent, newest first."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM audit_logs WHERE agent = %s ORDER BY timestamp DESC",
+                    (agent_name,),
+                )
+                return [dict(row) for row in cur.fetchall()]
 
     def get_audit_logs(self, app_id: str) -> list[dict]:
         with get_connection() as conn:

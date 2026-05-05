@@ -10,18 +10,18 @@ class GreenhouseNotFound(Exception):
     pass
 
 
-_SLUG_SPECIAL_CASES = {
-    "razorpaysoftwareprivatelimited": "Razorpay",
-    "cockroachlabs": "Cockroach Labs",
-    "newrelic": "New Relic",
-    "linkedin": "LinkedIn",
-    "dropbox": "Dropbox",
-}
-
-
-def slug_to_company_name(slug: str, ats_type: str = "") -> str:
-    if slug in _SLUG_SPECIAL_CASES:
-        return _SLUG_SPECIAL_CASES[slug]
+def slug_to_company_name(slug: str) -> str:
+    SPECIAL_CASES = {
+        "razorpaysoftwareprivatelimited": "Razorpay",
+        "cockroachlabs": "Cockroach Labs",
+        "newrelic": "New Relic",
+        "linkedin": "LinkedIn",
+        "dropbox": "Dropbox",
+        "github": "GitHub",
+        "youtube": "YouTube",
+    }
+    if slug in SPECIAL_CASES:
+        return SPECIAL_CASES[slug]
     return slug.replace("-", " ").replace("_", " ").title()
 
 
@@ -40,7 +40,7 @@ def scan_greenhouse(slug: str) -> list[dict]:
         console.print(f"[yellow]greenhouse/{slug}: HTTP {resp.status_code}[/yellow]")
         return []
 
-    company = slug_to_company_name(slug, "greenhouse")
+    company = slug_to_company_name(slug)
     return [
         {
             "title": job.get("title", ""),
@@ -73,7 +73,7 @@ def scan_ashby(slug: str) -> list[dict]:
     if resp.status_code != 200:
         return []
 
-    company = slug_to_company_name(slug, "ashby")
+    company = slug_to_company_name(slug)
     return [
         {
             "title": job.get("title", ""),
@@ -102,7 +102,7 @@ def scan_lever(slug: str) -> list[dict]:
     if resp.status_code != 200:
         return []
 
-    company = slug_to_company_name(slug, "lever")
+    company = slug_to_company_name(slug)
     return [
         {
             "title": job.get("text", ""),
