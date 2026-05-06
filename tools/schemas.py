@@ -43,8 +43,14 @@ class ReviewResult(BaseModel):
 
 
 class NetworkingMessages(BaseModel):
-    linkedin_dm: str = Field(min_length=10, max_length=800)
-    cold_email: str = Field(min_length=50, max_length=2000)
+    linkedin_dm: str = Field(min_length=20, max_length=600)
+    linkedin_dm_word_count: int = Field(ge=20, le=100)
+    cold_email_subject: str = Field(min_length=10, max_length=120)
+    cold_email_body: str = Field(min_length=200, max_length=1800)
+    cold_email_word_count: int = Field(ge=150, le=300)
+    angle: str = Field(min_length=20)
+    selected_proof_point_ids: list[str] = Field(min_length=1, max_length=3)
+    placeholders_used: list[str] = Field(default_factory=list)
 
 
 class CoverLetter(BaseModel):
