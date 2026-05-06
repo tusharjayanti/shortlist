@@ -1,14 +1,19 @@
-from agents.scorer import _extract_json
+import logging
+import re
+
+from agents.scorer import _extract_json  # noqa: F401  (kept for parity with reviewer/scorer)
 from tools.config_loader import Config
+from tools.corpus import parse_corpus
 from tools.llm import get_active_llm
 from tools.prompts import load_prompt
 from tools.resume import read_resume, write_tailored_resume
-from tools.schemas import ReviewResult
+from tools.schemas import Corpus, ReviewResult
 from tracker.audit import audited
 from tracker.tracker import JobTracker
 
 USER_TEMPLATE = """
 TARGET JOB:
+
 Company: {company}
 Role: {title}
 Location: {location}
@@ -29,8 +34,22 @@ Prioritised edits:
 
 ---
 
-CURRENT RESUME (LaTeX):
+CURRENT RESUME (LaTeX) — use as both template and content source:
+
 {resume_tex}
+
+---
+
+EXPERIENCE CORPUS (Markdown) — additional bullets you may pull from:
+
+{corpus_text}
+
+---
+
+Produce the tailored LaTeX resume. Every bullet must trace to
+either the resume above or the corpus above. Use the resume's
+LaTeX structure and formatting; pull richer bullets from the
+corpus where the JD calls for content the resume currently lacks.
 """
 
 
@@ -48,6 +67,7 @@ class TailorAgent:
         return self._system_prompt_template.format(
             name=c.name,
             experience_years=c.experience_years,
+            target_role_description=", ".join(c.roles),
             archetype=archetype,
             archetype_lead=arch_config.lead_with if arch_config else "",
             archetype_proof_points=", ".join(
@@ -64,6 +84,74 @@ class TailorAgent:
             )
         return "\n\n".join(lines)
 
+    def _format_corpus_for_prompt(self, corpus: Corpus) -> str:
+        """Serialize corpus as Markdown for inclusion in LLM prompt."""
+        lines = [f"# {corpus.name}", ""]
+
+        for role in corpus.roles:
+            lines.append(f"## {role.company} ({role.title})")
+            if role.dates:
+                lines.append(f"**Dates:** {role.dates}")
+            if role.tech_stack:
+                lines.append(f"**Tech stack:** {', '.join(role.tech_stack)}")
+            lines.append("")
+
+            for bullet in role.bullets:
+                lines.append(f"### {bullet.title}")
+                lines.append(bullet.text)
+                lines.append("")
+
+        if corpus.projects:
+            lines.append("## Personal Projects")
+            for proj in corpus.projects:
+                lines.append(f"### {proj.title}")
+                lines.append(proj.text)
+                lines.append("")
+
+        if corpus.education:
+            lines.append("## Education")
+            for edu in corpus.education:
+                lines.append(edu)
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _verify_no_obvious_fabrication(
+        self,
+        tailored_tex: str,
+        resume_tex: str,
+        corpus: Corpus,
+    ) -> None:
+        """
+        Light fabrication check. Build a corpus of all known facts
+        and verify that distinctive content in the output appears
+        in at least one source.
+
+        Intentionally permissive — catches obvious hallucinations
+        (made-up companies, fake projects) but allows reasonable
+        rewording.
+        """
+        all_known_text = (
+            resume_tex + "\n" + self._format_corpus_for_prompt(corpus)
+        ).lower()
+
+        suspicious_tokens = []
+        for match in re.finditer(r'\\textbf{([^}]+)}', tailored_tex):
+            token = match.group(1).strip()
+            if len(token) < 4 or token.lower() in [
+                "education", "experience", "skills", "summary"
+            ]:
+                continue
+            if token.lower() not in all_known_text:
+                suspicious_tokens.append(token)
+
+        if suspicious_tokens:
+            logging.warning(
+                f"Tailor output contains tokens not found in "
+                f"resume.tex or experience.md: {suspicious_tokens[:5]}. "
+                f"This may indicate fabrication. Review before sending."
+            )
+
     @audited(agent_name="tailor", action="tailor_resume")
     def run(
         self,
@@ -72,24 +160,21 @@ class TailorAgent:
         archetype: str,
         review: ReviewResult,
         resume_tex: str | None = None,
+        corpus_path: str = "experience.md",
         feedback: str | None = None,
     ) -> dict:
         """
-        Tailor the resume for a specific job using archetype
-        framing and reviewer's analysis.
+        Tailor the resume using both resume.tex and experience.md.
 
-        If resume_tex is None, reads from resume/resume.tex.
-        If feedback is provided, it's from the ReviewCoordinator —
-        the user rejected the previous version and gave notes.
-
-        Returns dict with:
-          tex_content: str  — the full tailored LaTeX
-          tex_path: str     — where it was saved
-          version: int      — version number in resume_versions
-          changes_summary: str — what was changed
+        The LLM may keep, reword, replace, add, or drop bullets,
+        drawing from either source. Every bullet in the output
+        must trace to one of the two sources.
         """
         if resume_tex is None:
             resume_tex = read_resume()
+
+        corpus = parse_corpus(corpus_path)
+        corpus_text = self._format_corpus_for_prompt(corpus)
 
         system = self._build_system_prompt(archetype)
 
@@ -106,14 +191,15 @@ class TailorAgent:
             missing_keywords=missing_kw,
             edits_text=edits_text,
             resume_tex=resume_tex,
+            corpus_text=corpus_text,
         )
 
         if feedback:
             user += (
                 f"\n\n---\n\n"
                 f"USER FEEDBACK on previous version:\n{feedback}\n\n"
-                f"Incorporate this feedback while keeping all other "
-                f"improvements. Return the full LaTeX document."
+                f"Incorporate this feedback while keeping all "
+                f"trace-to-source guarantees. Return the full LaTeX."
             )
 
         response = self.llm.complete(
@@ -127,21 +213,23 @@ class TailorAgent:
         tailored_tex = response.text.strip()
 
         if tailored_tex.startswith("```"):
-            lines = tailored_tex.split("\n")
-            lines = lines[1:]
+            lines = tailored_tex.split("\n")[1:]
             if lines and lines[-1].strip() == "```":
                 lines = lines[:-1]
             tailored_tex = "\n".join(lines)
 
         if not tailored_tex.strip().startswith("\\documentclass"):
             raise RuntimeError(
-                "Tailor output doesn't start with \\documentclass. "
-                "LLM may have returned commentary instead of LaTeX."
+                "Tailor output doesn't start with \\documentclass."
             )
 
+        self._verify_no_obvious_fabrication(
+            tailored_tex, resume_tex, corpus
+        )
+
         candidate_name = self.config.candidate.name.replace(" ", "_")
-        company_slug = job["company"].replace(" ", "_").replace("-", "_")
-        role_slug = job["title"].replace(" ", "_").replace("-", "_")[:50]
+        company_slug = job["company"].lower().replace(" ", "_").replace("-", "_")
+        role_slug = job["title"].lower().replace(" ", "_").replace("-", "_")[:50]
         output_path = f"output/{candidate_name}_{company_slug}_{role_slug}.tex"
 
         written_path = write_tailored_resume(
@@ -154,9 +242,13 @@ class TailorAgent:
             app_id=app_id,
             tex_path=written_path,
             pdf_path=None,
-            changes_summary=f"Archetype: {archetype}. "
-                + f"Edits applied: {len(review.prioritized_edits)}. "
-                + (f"User feedback: {feedback[:100]}" if feedback else "Initial version."),
+            changes_summary=(
+                f"Archetype: {archetype}. "
+                f"Sources: resume.tex + experience.md. "
+                f"Edits applied: {len(review.prioritized_edits)}. "
+                + (f"User feedback: {feedback[:100]}" if feedback
+                   else "Initial version.")
+            ),
             feedback_given=feedback,
         )
 
@@ -164,7 +256,9 @@ class TailorAgent:
             "tex_content": tailored_tex,
             "tex_path": written_path,
             "version": version,
-            "changes_summary": f"v{version}: {archetype} framing, "
-                + f"{len(review.missing_keywords)} keywords added, "
-                + f"{len(review.prioritized_edits)} edits applied",
+            "changes_summary": (
+                f"v{version}: {archetype} framing, "
+                f"{len(review.missing_keywords)} keywords, "
+                f"corpus-augmented"
+            ),
         }

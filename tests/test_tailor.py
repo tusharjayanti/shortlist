@@ -1,3 +1,5 @@
+import logging
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -19,7 +21,17 @@ from tools.config_loader import (
     SourcesConfig,
     StartupInference,
 )
-from tools.schemas import PrioritizedEdit, ReviewResult
+from tools.schemas import (
+    Corpus,
+    CorpusBullet,
+    CorpusRole,
+    PrioritizedEdit,
+    ReviewResult,
+)
+
+CORPUS_FIXTURE_PATH = str(
+    Path(__file__).parent / "fixtures" / "test_experience.md"
+)
 
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
@@ -155,6 +167,37 @@ def sample_job():
     }
 
 
+@pytest.fixture
+def sample_corpus():
+    """Build a Corpus object for testing."""
+    return Corpus(
+        name="Test User",
+        roles=[
+            CorpusRole(
+                role_id="acme-corp-senior-engineer",
+                company="Acme Corp",
+                title="Senior Engineer",
+                dates="2023 - Present",
+                tech_stack=["Python", "PostgreSQL"],
+                bullets=[
+                    CorpusBullet(
+                        role_id="acme-corp-senior-engineer",
+                        bullet_id="built-data-pipeline",
+                        title="Built data pipeline",
+                        text="Built a scalable data pipeline processing 1M+ records daily.",
+                    ),
+                    CorpusBullet(
+                        role_id="acme-corp-senior-engineer",
+                        bullet_id="migrated-to-microservices",
+                        title="Migrated to microservices",
+                        text="Led migration of monolithic billing service into 4 microservices.",
+                    ),
+                ],
+            ),
+        ],
+    )
+
+
 # ── tests ─────────────────────────────────────────────────────────────────────
 
 def test_tailor_returns_valid_latex(
@@ -172,6 +215,7 @@ def test_tailor_returns_valid_latex(
         result = tailor.run(
             "app-123", sample_job, "fintech_platform",
             sample_review, resume_tex=sample_resume_tex,
+            corpus_path=CORPUS_FIXTURE_PATH,
         )
 
     assert set(result.keys()) == {"tex_content", "tex_path", "version", "changes_summary"}
@@ -196,6 +240,7 @@ def test_tailor_rejects_non_latex_output(
             tailor.run(
                 "app-123", sample_job, "fintech_platform",
                 sample_review, resume_tex=sample_resume_tex,
+                corpus_path=CORPUS_FIXTURE_PATH,
             )
 
 
@@ -215,6 +260,7 @@ def test_tailor_strips_markdown_fences(
         result = tailor.run(
             "app-123", sample_job, "fintech_platform",
             sample_review, resume_tex=sample_resume_tex,
+            corpus_path=CORPUS_FIXTURE_PATH,
         )
 
     assert result["tex_content"].startswith("\\documentclass")
@@ -236,6 +282,7 @@ def test_tailor_saves_version_to_tracker(
         result = tailor.run(
             "app-123", sample_job, "fintech_platform",
             sample_review, resume_tex=sample_resume_tex,
+            corpus_path=CORPUS_FIXTURE_PATH,
         )
 
     mock_tracker.save_resume_version.assert_called_once()
@@ -261,6 +308,7 @@ def test_tailor_includes_feedback_in_prompt(
         tailor.run(
             "app-123", sample_job, "fintech_platform",
             sample_review, resume_tex=sample_resume_tex,
+            corpus_path=CORPUS_FIXTURE_PATH,
             feedback="tone down the summary",
         )
 
@@ -283,6 +331,7 @@ def test_tailor_includes_archetype_in_system_prompt(
         tailor.run(
             "app-123", sample_job, "fintech_platform",
             sample_review, resume_tex=sample_resume_tex,
+            corpus_path=CORPUS_FIXTURE_PATH,
         )
 
     system_prompt = mock_llm.complete.call_args.kwargs["system_prompt"]
@@ -305,6 +354,7 @@ def test_tailor_uses_low_temperature(
         tailor.run(
             "app-123", sample_job, "fintech_platform",
             sample_review, resume_tex=sample_resume_tex,
+            corpus_path=CORPUS_FIXTURE_PATH,
         )
 
     call_kwargs = mock_llm.complete.call_args.kwargs
@@ -327,6 +377,105 @@ def test_tailor_enforces_length_guardrail(
             tailor.run(
                 "app-123", sample_job, "fintech_platform",
                 sample_review, resume_tex=sample_resume_tex,
+                corpus_path=CORPUS_FIXTURE_PATH,
             )
 
 
+# ── corpus integration tests ──────────────────────────────────────────────────
+
+def test_tailor_passes_both_sources_to_prompt(
+    minimal_config, mock_tracker, mock_llm_response,
+    sample_resume_tex, sample_review, sample_job, sample_corpus,
+):
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=sample_corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(sample_resume_tex)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        tailor.run(
+            "app-123", sample_job, "fintech_platform",
+            sample_review, resume_tex=sample_resume_tex,
+        )
+
+    user_message = mock_llm.complete.call_args.kwargs["messages"][0]["content"]
+    # resume content present
+    assert "Tushar Jayanti" in user_message
+    assert "DISCO" in user_message
+    # corpus content present
+    assert "Acme Corp" in user_message
+    assert "Built data pipeline" in user_message
+
+
+def test_tailor_format_corpus_for_prompt_includes_all_roles(
+    minimal_config, mock_tracker, sample_corpus,
+):
+    with patch("agents.tailor.get_active_llm"):
+        tailor = TailorAgent(mock_tracker, minimal_config)
+
+    formatted = tailor._format_corpus_for_prompt(sample_corpus)
+
+    assert "Acme Corp" in formatted
+    assert "Built data pipeline" in formatted
+    assert "Migrated to microservices" in formatted
+    assert "Python, PostgreSQL" in formatted
+    assert "2023 - Present" in formatted
+
+
+def test_tailor_warns_on_suspicious_tokens(
+    minimal_config, mock_tracker, mock_llm_response,
+    sample_resume_tex, sample_review, sample_job, sample_corpus, caplog,
+):
+    # LaTeX containing a token (\textbf{Spotify}) that's in neither
+    # resume.tex nor the corpus
+    fabricated = sample_resume_tex.replace(
+        r"\textbf{DISCO}", r"\textbf{Spotify}"
+    )
+
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=sample_corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(fabricated)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        with caplog.at_level(logging.WARNING):
+            tailor.run(
+                "app-123", sample_job, "fintech_platform",
+                sample_review, resume_tex=sample_resume_tex,
+            )
+
+    assert "Spotify" in caplog.text
+    assert "fabrication" in caplog.text.lower()
+
+
+def test_tailor_no_warning_when_all_content_traces(
+    minimal_config, mock_tracker, mock_llm_response,
+    sample_resume_tex, sample_review, sample_job, sample_corpus, caplog,
+):
+    # Every \textbf{...} in sample_resume_tex traces to itself
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=sample_corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(sample_resume_tex)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        with caplog.at_level(logging.WARNING, logger="root"):
+            tailor.run(
+                "app-123", sample_job, "fintech_platform",
+                sample_review, resume_tex=sample_resume_tex,
+            )
+
+    fabrication_warnings = [
+        r for r in caplog.records
+        if "fabrication" in r.getMessage().lower()
+    ]
+    assert fabrication_warnings == []
