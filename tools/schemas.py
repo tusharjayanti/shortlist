@@ -50,3 +50,51 @@ class NetworkingMessages(BaseModel):
 class CoverLetter(BaseModel):
     text: str = Field(min_length=100)
     word_count: int = Field(ge=100, le=600)
+
+
+class CorpusBullet(BaseModel):
+    role_id: str
+    bullet_id: str
+    title: str
+    text: str = Field(min_length=20)
+
+
+class CorpusRole(BaseModel):
+    role_id: str
+    company: str
+    title: str
+    dates: str = ""
+    tech_stack: list[str] = Field(default_factory=list)
+    bullets: list[CorpusBullet]
+
+
+class Corpus(BaseModel):
+    name: str
+    roles: list[CorpusRole]
+    projects: list[CorpusBullet] = Field(default_factory=list)
+    education: list[str] = Field(default_factory=list)
+    other: dict[str, str] = Field(default_factory=dict)
+
+    def get_bullet(self, bullet_id: str) -> CorpusBullet | None:
+        """Find a bullet by ID across roles and projects."""
+        for role in self.roles:
+            for b in role.bullets:
+                if b.bullet_id == bullet_id:
+                    return b
+        for p in self.projects:
+            if p.bullet_id == bullet_id:
+                return p
+        return None
+
+    def get_role(self, role_id: str) -> CorpusRole | None:
+        for role in self.roles:
+            if role.role_id == role_id:
+                return role
+        return None
+
+    def find_role_by_company(self, company: str) -> CorpusRole | None:
+        """Case-insensitive company name match for joining with resume."""
+        for role in self.roles:
+            if role.company.lower() == company.lower():
+                return role
+        return None

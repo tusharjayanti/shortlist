@@ -209,6 +209,8 @@ __marimo__/
 # Project-specific
 config.yaml
 !config.example.yaml
+experience.md
+!experience.example.md
 resume/
 output/
 data/
