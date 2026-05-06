@@ -49,7 +49,10 @@ class NetworkingMessages(BaseModel):
 
 class CoverLetter(BaseModel):
     text: str = Field(min_length=100)
-    word_count: int = Field(ge=100, le=600)
+    word_count: int = Field(ge=150, le=500)
+    angle: str = Field(min_length=20)
+    selected_proof_point_ids: list[str] = Field(min_length=2, max_length=5)
+    company_research_signals: list[str] = Field(default_factory=list)
 
 
 class CorpusBullet(BaseModel):
