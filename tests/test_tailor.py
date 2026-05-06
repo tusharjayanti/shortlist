@@ -479,3 +479,211 @@ def test_tailor_no_warning_when_all_content_traces(
         if "fabrication" in r.getMessage().lower()
     ]
     assert fabrication_warnings == []
+
+
+# ── chronological-order tests ─────────────────────────────────────────────────
+
+def _multi_role_corpus() -> Corpus:
+    """Reverse-chronological corpus: Acme (most recent) then Beta (older)."""
+    return Corpus(
+        name="Test User",
+        roles=[
+            CorpusRole(
+                role_id="acme-senior",
+                company="Acme Corp",
+                title="Senior Engineer",
+                dates="2024 - Present",
+                bullets=[CorpusBullet(
+                    role_id="acme-senior", bullet_id="acme-pipeline",
+                    title="Pipeline", text="Built scalable pipeline at Acme.",
+                )],
+            ),
+            CorpusRole(
+                role_id="beta-engineer",
+                company="Beta Inc",
+                title="Software Engineer",
+                dates="2020 - 2024",
+                bullets=[CorpusBullet(
+                    role_id="beta-engineer", bullet_id="beta-events",
+                    title="Events", text="Designed Kafka event streaming at Beta.",
+                )],
+            ),
+        ],
+    )
+
+
+def _multi_role_latex(role_order: list[str]) -> str:
+    """Build a LaTeX resume with \\resumeSubheading macros in given order."""
+    sections = "\n".join(
+        f"\\resumeSubheading{{\\textbf{{{c}}}}}\nDid work at {c}.\n" * 5
+        for c in role_order
+    )
+    return (
+        "\\documentclass{article}\n"
+        "\\begin{document}\n"
+        "\\section*{Experience}\n"
+        + sections +
+        "\\section*{Education}\n"
+        "MS Computer Science\n"
+        "\\end{document}\n"
+    )
+
+
+def test_tailor_warns_on_non_chronological_order(
+    minimal_config, mock_tracker, mock_llm_response,
+    sample_review, sample_job, caplog,
+):
+    """Resume with roles out of order triggers warning."""
+    corpus = _multi_role_corpus()
+    # Corpus order: [Acme Corp, Beta Inc]. Wrong tex order: [Beta Inc, Acme Corp].
+    wrong_order_tex = _multi_role_latex(["Beta Inc", "Acme Corp"])
+
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(wrong_order_tex)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        with caplog.at_level(logging.WARNING):
+            tailor.run(
+                "app-1", sample_job, "fintech_platform",
+                sample_review, resume_tex=wrong_order_tex,
+            )
+
+    chrono_warnings = [
+        r for r in caplog.records
+        if "chronological" in r.getMessage().lower()
+    ]
+    assert len(chrono_warnings) >= 1
+    assert "Beta Inc" in chrono_warnings[0].getMessage()
+    assert "Acme Corp" in chrono_warnings[0].getMessage()
+
+
+def test_tailor_no_warning_when_order_matches(
+    minimal_config, mock_tracker, mock_llm_response,
+    sample_review, sample_job, caplog,
+):
+    """Correct order produces no chronological warning."""
+    corpus = _multi_role_corpus()
+    # Tex order matches corpus reverse-chrono: [Acme Corp, Beta Inc]
+    correct_order_tex = _multi_role_latex(["Acme Corp", "Beta Inc"])
+
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(correct_order_tex)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        with caplog.at_level(logging.WARNING):
+            tailor.run(
+                "app-1", sample_job, "fintech_platform",
+                sample_review, resume_tex=correct_order_tex,
+            )
+
+    chrono_warnings = [
+        r for r in caplog.records
+        if "chronological" in r.getMessage().lower()
+    ]
+    assert chrono_warnings == []
+
+
+def test_chronological_check_uses_dates_not_corpus_order(
+    minimal_config, mock_tracker, mock_llm_response,
+    sample_review, sample_job, caplog,
+):
+    """
+    Corpus role list is [Recent, Old, Middle] (NOT in date order).
+    True date order is [Recent, Middle, Old]. Validator must
+    use dates, not corpus.roles insertion order.
+    """
+    corpus = Corpus(
+        name="Test",
+        roles=[
+            CorpusRole(
+                role_id="recent", company="Recent",
+                title="Eng", dates="Jan 2023 - Present",
+                bullets=[CorpusBullet(
+                    role_id="recent", bullet_id="b1",
+                    title="x", text="some work content here",
+                )],
+            ),
+            CorpusRole(
+                role_id="old", company="Old",
+                title="Eng", dates="Jan 2018 - Dec 2019",
+                bullets=[CorpusBullet(
+                    role_id="old", bullet_id="b1",
+                    title="x", text="some work content here",
+                )],
+            ),
+            CorpusRole(
+                role_id="middle", company="Middle",
+                title="Eng", dates="Jan 2020 - Dec 2021",
+                bullets=[CorpusBullet(
+                    role_id="middle", bullet_id="b1",
+                    title="x", text="some work content here",
+                )],
+            ),
+        ],
+    )
+
+    correct_tex = _multi_role_latex(["Recent", "Middle", "Old"])
+    wrong_tex = _multi_role_latex(["Recent", "Old", "Middle"])
+
+    # Run 1: correct date order → no warning
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(correct_tex)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        with caplog.at_level(logging.WARNING):
+            tailor.run(
+                "app-1", sample_job, "fintech_platform",
+                sample_review, resume_tex=correct_tex,
+            )
+
+    chrono_warnings = [
+        r for r in caplog.records
+        if "chronological" in r.getMessage().lower()
+    ]
+    assert chrono_warnings == [], (
+        f"Unexpected warning when order is correct: "
+        f"{[r.getMessage() for r in chrono_warnings]}"
+    )
+
+    caplog.clear()
+
+    # Run 2: wrong date order (Old before Middle) → warning
+    with patch("agents.tailor.get_active_llm") as mock_get_llm, \
+         patch("agents.tailor.write_tailored_resume") as mock_write, \
+         patch("agents.tailor.parse_corpus", return_value=corpus):
+        mock_llm = MagicMock()
+        mock_llm.complete.return_value = mock_llm_response(wrong_tex)
+        mock_get_llm.return_value = mock_llm
+        mock_write.return_value = "/tmp/fake.tex"
+
+        tailor = TailorAgent(mock_tracker, minimal_config)
+        with caplog.at_level(logging.WARNING):
+            tailor.run(
+                "app-1", sample_job, "fintech_platform",
+                sample_review, resume_tex=wrong_tex,
+            )
+
+    chrono_warnings = [
+        r for r in caplog.records
+        if "chronological" in r.getMessage().lower()
+    ]
+    assert len(chrono_warnings) >= 1
+    msg = chrono_warnings[0].getMessage()
+    assert "Recent" in msg and "Middle" in msg and "Old" in msg
+    # Expected order in the warning should be by date, not corpus order
+    assert "Expected order (by end date):" in msg

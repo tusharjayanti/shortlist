@@ -152,6 +152,84 @@ class TailorAgent:
                 f"This may indicate fabrication. Review before sending."
             )
 
+    def _verify_chronological_order(
+        self,
+        tailored_tex: str,
+        corpus: Corpus,
+    ) -> None:
+        """
+        Warn if the tailored resume's role order doesn't match
+        reverse chronological order based on end dates from corpus.
+        """
+        from datetime import datetime
+
+        def parse_end_date(dates_str: str) -> datetime:
+            """
+            Parse the end date from strings like
+            'Nov 2023 – Sept 2025' or 'Sept 2020 – Sept 2022'.
+            Returns datetime.max for 'Present' or unparseable.
+            """
+            if not dates_str:
+                return datetime.min
+
+            parts = re.split(r'\s*[–—-]\s*', dates_str.strip())
+            if len(parts) < 2:
+                return datetime.min
+
+            end_part = parts[-1].strip().lower()
+            if 'present' in end_part or 'current' in end_part:
+                return datetime.max
+
+            for fmt in ['%b %Y', '%B %Y', '%m/%Y', '%Y']:
+                try:
+                    return datetime.strptime(end_part, fmt)
+                except ValueError:
+                    continue
+            return datetime.min
+
+        roles_with_dates = [
+            (role.company, parse_end_date(role.dates))
+            for role in corpus.roles
+        ]
+        expected_order = sorted(
+            roles_with_dates,
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        expected_companies = [c for c, _ in expected_order]
+
+        tex_companies_in_order = []
+        for match in re.finditer(
+            r'\\resumeSubheading\s*\{\\textbf\{([^}]+)\}\}',
+            tailored_tex,
+        ):
+            tex_companies_in_order.append(match.group(1).strip())
+
+        if not tex_companies_in_order:
+            return
+
+        tex_indices = []
+        for tex_company in tex_companies_in_order:
+            for i, exp_company in enumerate(expected_companies):
+                if (tex_company.lower() == exp_company.lower()
+                        or exp_company.lower() in tex_company.lower()
+                        or tex_company.lower() in exp_company.lower()):
+                    tex_indices.append(i)
+                    break
+
+        is_chronological = all(
+            tex_indices[i] <= tex_indices[i + 1]
+            for i in range(len(tex_indices) - 1)
+        )
+
+        if not is_chronological:
+            logging.warning(
+                f"Tailored resume role order is not reverse chronological. "
+                f"Resume order: {tex_companies_in_order}. "
+                f"Expected order (by end date): {expected_companies}. "
+                f"Review before sending."
+            )
+
     @audited(agent_name="tailor", action="tailor_resume")
     def run(
         self,
@@ -226,6 +304,8 @@ class TailorAgent:
         self._verify_no_obvious_fabrication(
             tailored_tex, resume_tex, corpus
         )
+
+        self._verify_chronological_order(tailored_tex, corpus)
 
         candidate_name = self.config.candidate.name.replace(" ", "_")
         company_slug = job["company"].lower().replace(" ", "_").replace("-", "_")

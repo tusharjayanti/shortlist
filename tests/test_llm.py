@@ -48,6 +48,20 @@ def _rate_limit_error() -> Exception:
     return anthropic.RateLimitError("Rate limited", response=response, body=None)
 
 
+def _overloaded_error() -> Exception:
+    from anthropic._exceptions import OverloadedError
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(529, request=request)
+    return OverloadedError("Overloaded", response=response, body=None)
+
+
+def _auth_error() -> Exception:
+    import anthropic
+    request = httpx.Request("POST", "https://api.anthropic.com/v1/messages")
+    response = httpx.Response(401, request=request)
+    return anthropic.AuthenticationError("Bad key", response=response, body=None)
+
+
 # ── factory ───────────────────────────────────────────────────────────────────
 
 def test_get_llm_returns_anthropic_for_anthropic_config():
@@ -100,9 +114,77 @@ def test_anthropic_provider_retries_on_429():
 
     assert mock_create.call_count == 3
     assert mock_sleep.call_count == 2
-    assert mock_sleep.call_args_list[0].args[0] == 1  # first delay
-    assert mock_sleep.call_args_list[1].args[0] == 2  # second delay
+    assert mock_sleep.call_args_list[0].args[0] == 2  # first delay
+    assert mock_sleep.call_args_list[1].args[0] == 4  # second delay
     assert isinstance(result, LLMResponse)
+
+
+def test_anthropic_retries_on_overloaded():
+    provider = AnthropicProvider(_make_cfg("anthropic"))
+    error = _overloaded_error()
+
+    with patch("anthropic.Anthropic") as mock_cls, \
+         patch("tools.llm.time.sleep") as mock_sleep:
+        mock_create = mock_cls.return_value.messages.create
+        mock_create.side_effect = [error, error, _make_anthropic_response()]
+
+        result = provider.complete([{"role": "user", "content": "Hi"}], "System")
+
+    assert mock_create.call_count == 3
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 2
+    assert mock_sleep.call_args_list[1].args[0] == 4
+    assert isinstance(result, LLMResponse)
+
+
+def test_anthropic_retries_on_rate_limit():
+    provider = AnthropicProvider(_make_cfg("anthropic"))
+    error = _rate_limit_error()
+
+    with patch("anthropic.Anthropic") as mock_cls, \
+         patch("tools.llm.time.sleep") as mock_sleep:
+        mock_create = mock_cls.return_value.messages.create
+        mock_create.side_effect = [error, error, _make_anthropic_response()]
+
+        result = provider.complete([{"role": "user", "content": "Hi"}], "System")
+
+    assert mock_create.call_count == 3
+    assert mock_sleep.call_count == 2
+    assert mock_sleep.call_args_list[0].args[0] == 2
+    assert mock_sleep.call_args_list[1].args[0] == 4
+    assert isinstance(result, LLMResponse)
+
+
+def test_anthropic_raises_after_3_overloaded_errors():
+    provider = AnthropicProvider(_make_cfg("anthropic"))
+    error = _overloaded_error()
+
+    with patch("anthropic.Anthropic") as mock_cls, \
+         patch("tools.llm.time.sleep"):
+        mock_create = mock_cls.return_value.messages.create
+        mock_create.side_effect = [error, error, error]
+
+        with pytest.raises(LLMError):
+            provider.complete([{"role": "user", "content": "Hi"}], "System")
+
+    assert mock_create.call_count == 3
+
+
+def test_anthropic_does_not_retry_on_other_errors():
+    """Auth errors (and other non-retryable APIStatusErrors) raise immediately."""
+    provider = AnthropicProvider(_make_cfg("anthropic"))
+    error = _auth_error()
+
+    with patch("anthropic.Anthropic") as mock_cls, \
+         patch("tools.llm.time.sleep") as mock_sleep:
+        mock_create = mock_cls.return_value.messages.create
+        mock_create.side_effect = error
+
+        with pytest.raises(LLMError):
+            provider.complete([{"role": "user", "content": "Hi"}], "System")
+
+    assert mock_create.call_count == 1
+    assert mock_sleep.call_count == 0
 
 
 def test_anthropic_provider_raises_llm_error_after_max_retries():

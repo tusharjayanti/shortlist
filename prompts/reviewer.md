@@ -33,6 +33,12 @@ Given the archetype detected for this role:
 - What should be de-emphasised for this specific role?
 - Is this a step up, lateral move, or pivot?
 
+CONSTRAINT: Do not suggest reordering experience sections to
+lead with a more relevant role. Resumes must remain in reverse
+chronological order. If a less-recent role is more relevant
+to the JD, suggest "emphasize <role>'s relevant bullets"
+rather than "move <role> to the top".
+
 Return ONLY valid JSON matching this schema exactly:
 {{
   "verdict": "<one of: Strong Fit, Good Fit, Moderate Fit, Poor Fit>",
