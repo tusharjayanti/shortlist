@@ -178,3 +178,74 @@ class JobTracker:
                     (app_id,),
                 )
                 return [dict(row) for row in cur.fetchall()]
+
+    # ── flow-friendly aliases / aggregations ──────────────────────────────────
+
+    def is_url_seen(self, url: str) -> bool:
+        """Alias for is_seen_url, matching naming used in flows/."""
+        return self.is_seen_url(url)
+
+    def update_application_status(
+        self, app_id: str, status: str, notes: str | None = None,
+    ) -> None:
+        """Alias for update_status, matching naming used in flows/."""
+        self.update_status(app_id, status, notes)
+
+    def get_audit_logs_by_app(self, app_id: str) -> list[dict]:
+        """Alias for get_audit_logs, matching naming used in flows/."""
+        return self.get_audit_logs(app_id)
+
+    def get_applications_by_status(self, statuses: list[str]) -> list[dict]:
+        """Return applications whose status is in any of the given values."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT * FROM applications WHERE status = ANY(%s) "
+                    "ORDER BY created_at DESC",
+                    (statuses,),
+                )
+                return [dict(row) for row in cur.fetchall()]
+
+    def get_status_counts(self) -> dict[str, int]:
+        """Return {status: count} across all applications."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT status, COUNT(*) AS n FROM applications GROUP BY status"
+                )
+                return {row["status"]: row["n"] for row in cur.fetchall()}
+
+    def get_grade_counts(self) -> dict[str, int]:
+        """Return {grade: count} across all applications with a grade set."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT grade, COUNT(*) AS n FROM applications "
+                    "WHERE grade IS NOT NULL GROUP BY grade"
+                )
+                return {row["grade"]: row["n"] for row in cur.fetchall()}
+
+    def get_token_usage_by_agent(self) -> dict[str, dict]:
+        """
+        Return {agent: {calls: int, total_tokens: int}}.
+
+        NOTE: audit_logs only stores tokens_used (sum of input + output);
+        no separate input/output columns exist, so cost reports must use
+        a blended price.
+        """
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT agent, COUNT(*) AS calls, "
+                    "COALESCE(SUM(tokens_used), 0) AS total_tokens "
+                    "FROM audit_logs "
+                    "WHERE tokens_used IS NOT NULL "
+                    "GROUP BY agent"
+                )
+                return {
+                    row["agent"]: {
+                        "calls": row["calls"],
+                        "total_tokens": row["total_tokens"],
+                    }
+                    for row in cur.fetchall()
+                }
