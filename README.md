@@ -1,34 +1,44 @@
 # Shortlist
 
-> AI-powered job search copilot for senior engineers.
-> Multi-agent system that scores jobs, tailors resumes, drafts
-> cover letters, and generates outreach — grounded in your
-> career corpus, not in hallucinations.
+> AI-powered job search copilot. Multi-agent system that
+> scores jobs, tailors resumes, drafts cover letters, and
+> generates outreach grounded in your career corpus, not
+> in hallucinations.
 
 ![CI](https://github.com/tusharjayanti/shortlist/actions/workflows/ci.yml/badge.svg)
 
 ## What it does
 
-The senior job search drowns in noise. Most JDs aren't a fit, the relevant
-ones still demand resume rework to pass ATS filters, and generic LinkedIn
-DMs get ignored. Doing this well across 50+ applications is a part-time
-job in itself — and the parts that actually matter (judgement on fit,
-narrative framing, choosing what to lead with) get squeezed out by the
-parts that don't (formatting, keyword matching, tracking what you sent
-where).
+Job searching at any level wastes most of the candidate's
+time on triage and tailoring rather than actually engaging
+with opportunities worth pursuing. Generic resumes get
+filtered out by ATS systems. Cover letters that don't speak
+to the specific role get ignored. Time spent applying to
+poor-fit roles is time not spent on roles where you'd
+actually thrive.
 
-Shortlist runs a corpus-grounded multi-agent pipeline over each job:
-score across 8 dimensions, detect the right archetype framing
-(distributed_systems vs fintech_platform vs ai_ml_engineer, etc.),
-review your resume against the JD, then tailor a resume + draft a cover
-letter + draft outreach messages — all anchored to bullets you wrote in
-your `experience.md` corpus. A human-in-the-loop coordinator lets you
-approve or revise each artifact before the PDF compiles.
+Shortlist is a multi-agent system that handles the parts of
+job searching that shouldn't take your time. Six AI agents
+work together to score each role against your background
+across 8 dimensions, identify gaps between the JD and your
+resume, tailor your CV with archetype-aware framing, draft
+a role-specific cover letter, and generate outreach for
+LinkedIn and email. Every artifact is grounded in a career
+corpus you write once and the system selects proof points from
+your real work, never invents them. State persists in
+PostgreSQL with audit logs on every LLM call, so you can
+resume interrupted sessions and review the reasoning behind
+any output.
 
-It's built for senior engineers running their own job search who want
-signal-to-noise over volume. If your goal is to apply to 200 places this
-quarter, this is the wrong tool. If your goal is to send 20 applications
-that each look like the candidate read the JD twice, this is closer.
+It's built for anyone running their own job search who wants
+real engineering rigor in the loop, typed schemas,
+persistent state, audit trails on every LLM call, and
+outputs grounded in your actual work. Engineers, designers,
+product managers, marketers, finance professionals,
+researchers, anyone whose work has accumulated meaningful
+proof points worth surfacing for the right opportunities.
+Comfortable with a terminal and willing to spend an hour
+writing your career corpus? You're the audience.
 
 ## Architecture
 
@@ -121,41 +131,287 @@ If you want to tune the prompts to your voice or your domain:
 4. Pull upstream changes safely: agent logic and prompts may move; your
    config, corpus, and resume are gitignored and won't be touched.
 
-## Configuration
+## Configuring Shortlist
 
-The system has three configuration layers, each with a gitignored user
-file and a committed example:
+Three files contain everything personal to your search. Each
+deserves real attention on first setup — the quality of the
+output depends almost entirely on the quality of these inputs.
+See [DATA_CONTRACT.md](DATA_CONTRACT.md) for the full split
+between user data and system code.
 
-| User file | Example | Purpose |
-|-----------|---------|---------|
-| `config.yaml` | `config.example.yaml` | Profile, archetypes, ATS sources |
-| `experience.md` | `experience.example.md` | Career corpus (all your work) |
-| `resume/resume.tex` | (none) | Your LaTeX resume |
+### `config.yaml` — your candidate profile
 
-See [DATA_CONTRACT.md](DATA_CONTRACT.md) for the full split between
-user data and system code, and the rules for safely pulling upstream
-changes.
+This file tells the system who you are and what you're
+looking for. The example file (`config.example.yaml`) is
+fully commented — open it alongside this guide.
 
-### Key config sections
+**Candidate section.** Your name, location, years of
+experience, target role types, salary expectations, and a
+free-text description of your career direction. The
+`target_role_description` field is used in agent prompts to
+frame how the system thinks about you (e.g.,
+`"senior software engineering with backend and AI focus"`
+vs `"product management with B2B SaaS focus"`).
 
-**Candidate profile** — your name, location, target roles, salary range,
-technical strengths. Plus a list of archetypes that downstream agents
-key off.
+**Archetypes.** This is the most important section to get
+right. An archetype defines how to position yourself for a
+specific category of role. You typically need 4-6 archetypes
+covering the kinds of roles you'd apply to.
 
-**Archetypes** — each archetype defines how to frame your career for a
-specific role type. The `fintech_platform` archetype says "lead with
-financial systems work, emphasize idempotency and compliance"; the
-`distributed_systems` archetype emphasizes scale, latency, and
-reliability instead. The scorer detects which archetype fits each JD;
-the tailor, cover letter, and networker agents all apply that framing.
+Each archetype has three fields:
 
-**ATS sources** — Greenhouse, Ashby, and Lever org slugs for companies
-you want the finder to scan. Use verified working slugs only — finder
-fails fast on 404s.
+- `lead_with` — the opening framing for resumes and cover
+  letters when this archetype is detected
+- `proof_points` — the categories of work that should surface
+  prominently
+- `keywords` — terms commonly seen in JDs that match this
+  archetype
 
-**Company tiers** — tier 1/2/3 companies with score bonuses applied
-after LLM scoring. Tier 1 gets `+3`, tier 3 is blacklisted (`-99` so it
-always sorts to grade F).
+Example for a backend engineer:
+
+```yaml
+archetypes:
+  fintech_platform:
+    lead_with: "high-throughput financial systems experience"
+    proof_points:
+      - idempotent transaction processing
+      - PCI compliance and audit trails
+      - high-availability payment workflows
+    keywords:
+      - payments
+      - fintech
+      - PCI
+      - idempotent
+      - transaction
+
+  distributed_systems:
+    lead_with: "distributed systems at scale"
+    proof_points:
+      - event-driven architectures
+      - low-latency service design
+      - production reliability engineering
+    keywords:
+      - distributed
+      - scale
+      - latency
+      - throughput
+      - reliability
+```
+
+The scorer agent reads JDs and detects which archetype fits
+best. Downstream agents (tailor, cover letter, networker)
+all use that archetype's framing. The same JD can produce
+very different outputs depending on archetype detection —
+which is exactly the point.
+
+When writing your archetypes, ask: "What kind of role am I
+applying for, and what would a great candidate for that role
+emphasize that's different from a great candidate for a
+related role?" That difference is your archetype.
+
+**Companies and tiers.** Organize companies into tiers based
+on your preference:
+
+- Tier 1: dream companies (small score bonus applied)
+- Tier 2: strong fits (no bonus)
+- Tier 3: blacklist (excluded from finder results)
+
+The finder uses the configured ATS slugs (Greenhouse, Ashby,
+Lever) to discover new jobs. Add slugs for any companies
+you actively want the finder to scan. The example file lists
+verified working slugs you can start with.
+
+**Scoring thresholds.** `min_score_to_surface` controls
+which jobs make it past the scorer into the rest of the
+pipeline. Default is 7 (out of 13). Lower it if you want to
+see more borderline matches; raise it if you only want to
+spend tokens on strong fits.
+
+**LLM provider.** Set `llm.provider` to `anthropic`,
+`openai`, or `gemini`. The matching API key in `.env` will
+be used.
+
+### `experience.md` — your career corpus
+
+This file is the single most important input to the system.
+Every bullet in your tailored resume, every proof point in
+your cover letters, every concrete reference in your outreach
+messages must trace back to a paragraph here. If something
+isn't in `experience.md`, the system can't claim it.
+
+This is far richer than your resume. Your resume might have
+4 bullets per role; `experience.md` should have 6-10
+paragraphs per role, each describing one project, problem,
+or responsibility in 2-5 sentences.
+
+**Format.** Light Markdown structure:
+
+```markdown
+# Your Name — Experience Corpus
+
+## Company Name (Job Title)
+**Dates:** Start - End
+**Tech stack:** Comma-separated list of tools, languages, frameworks
+
+### Short title for the project or work
+A paragraph describing what you did, the problem you were
+solving, the scale, the technologies, the outcome. Include
+real numbers wherever possible — they make the difference
+between "improved performance" and "reduced p99 latency from
+4.2s to 1s under 10k+ TPS load."
+
+### Another short title
+Another paragraph describing different work at the same
+company. Each ### heading creates a separate selectable
+bullet that the tailor agent can include or skip per JD.
+```
+
+**What to include per role:**
+
+- Major projects you owned, with metrics where they exist
+- Architectural decisions you made or influenced
+- Performance work, optimization, scale milestones
+- Cross-functional collaboration that mattered
+- Mentorship, hiring, or team-building you contributed to
+- On-call work, incident response, runbooks written
+- Open source contributions, talks, internal documentation
+- Anything you'd be comfortable being asked about in an
+  interview
+
+**What's worth its own bullet:**
+
+A bullet should describe one cohesive piece of work. "I built
+the X feature" is one bullet. "I built the X feature and
+also led the Y migration and also wrote the Z documentation"
+is three bullets, even if all three happened in the same
+quarter. Granularity matters because the tailor selects per
+JD — three smaller bullets give the system more options than
+one composite bullet.
+
+**Personal projects section.** Use this for side projects,
+open source contributions, or anything outside salaried
+work. Same format as roles but typically lighter.
+
+**Education section.** Standard — degree, institution, year,
+relevant coursework if early-career. The system surfaces
+education in tailored resumes but doesn't usually rewrite it.
+
+Plan to spend 60-90 minutes on first draft. The act of
+writing this is genuinely useful regardless of the system —
+forces you to articulate what you've actually done with full
+detail rather than the compressed resume version.
+
+You can always come back and add more. The richer it gets
+over time, the better the system performs.
+
+### `resume/resume.tex` — your existing LaTeX resume
+
+The tailor agent uses this for two things:
+1. The LaTeX template (document class, packages, formatting)
+2. Existing bullet content that may be kept, reworded, or
+   replaced with corpus material per JD
+
+If you don't have a LaTeX resume yet, you can:
+- Generate one from your existing PDF using Overleaf
+- Pick from the wide range of LaTeX resume templates on
+  Overleaf or GitHub and adapt one to your profession
+- Convert your existing Word or Google Docs resume manually
+
+The system doesn't require any specific LaTeX template — it
+adapts to whatever structure you provide. Headers, sections,
+bullet styles — all preserved.
+
+## Customizing the prompts
+
+The system prompts that drive each agent live in `prompts/`
+as plain Markdown files — `scorer.md`, `reviewer.md`,
+`tailor.md`, `cover.md`, `networker.md`. They're the most
+direct way to adapt Shortlist to your specific context.
+
+### Why prompts are externalized
+
+Prompts encode a lot of opinions about what makes a good
+resume bullet, what makes a strong cover letter, how to
+score a JD. The defaults are calibrated for senior software
+engineering roles because that's what the system was built
+for first. They work reasonably well across other
+professions, but they won't be optimal until adjusted for
+your context.
+
+Examples of when you'd want to edit prompts:
+
+- **Different profession.** A product manager applying for
+  PM roles should adjust `scorer.md` so the 8 dimensions
+  weigh things like product instinct, stakeholder management,
+  and roadmap thinking instead of system design depth and
+  on-call experience. Same idea for designers, marketers,
+  finance — each profession has its own evaluation rubric.
+
+- **Different seniority level.** Early-career candidates need
+  the reviewer agent to surface different gaps than
+  senior-level ones. A junior engineer probably shouldn't be
+  expected to demonstrate "led a team-wide migration" — but
+  the default prompts implicitly assume that experience.
+
+- **Different industry framing.** A backend engineer
+  applying to defense contractors needs different language
+  than one applying to consumer fintech. Tone, emphasis on
+  compliance, what counts as relevant experience — all worth
+  adjusting.
+
+- **Different language or region.** Cover letter conventions
+  vary by country. American resumes lead with achievements;
+  German resumes are more chronological. Adjust the cover
+  letter prompt to match the convention of where you're
+  applying.
+
+### How to edit prompts
+
+Each prompt is a regular Markdown file with `{placeholder}`
+tokens that get filled in at runtime with values from your
+config. Keep the placeholders intact when editing — they're
+how your candidate profile flows into the prompt.
+
+For example, `prompts/scorer.md` contains lines like:
+
+```
+Candidate profile:
+- Name: {name}
+- {experience_years} years of {target_role_description}
+- Stack: {backend}, {databases}, {cloud_devops}
+```
+
+The `{name}` token is replaced with `config.candidate.name`
+when the agent runs. Don't remove or rename these tokens —
+the agent's `_build_system_prompt` method expects them.
+
+Beyond the placeholders, everything else is plain English
+instructions to the LLM. Edit freely. Add sections, remove
+sections, rewrite the evaluation rubric. Whatever prompt you
+end up with becomes the prompt for every run.
+
+### Suggested editing workflow
+
+1. Run the system once with default prompts to get a baseline.
+2. Identify what's off. Did the scorer rate a good role too
+   low? Did the tailor over-rotate to keywords that aren't
+   really your strength?
+3. Edit the relevant prompt. Save.
+4. Re-run on the same JD. Compare outputs.
+5. Iterate until the system reflects your judgment.
+
+The audit logs in PostgreSQL preserve every LLM call with
+its inputs and outputs, so you can compare runs across
+prompt edits.
+
+### Sharing prompt sets
+
+If you adapt prompts for a specific profession or context
+and they work well, consider opening a PR to add them as a
+preset. The repo currently ships software-engineering
+defaults, but a PM preset, a designer preset, or a finance
+preset would be genuinely useful contributions. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow.
 
 ## How it works
 
@@ -290,6 +546,7 @@ Shortlist takes a different architectural direction: typed
 Python with Pydantic schemas across all agent boundaries,
 PostgreSQL persistence with audit logging, separation of career
 corpus from resume template, and a human-in-the-loop coordinator
-for iterative artifact review. It targets senior IC engineers
-running their own job search who want production-quality
-engineering tooling.
+for iterative artifact review. It's built for self-directed
+candidates who want real engineering rigor in their job search
+tooling typed schemas, persistent state, audit trails, and
+outputs grounded in their actual work.
