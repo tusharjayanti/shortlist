@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+NC='\033[0m'
+
+cd "$(dirname "$0")"
+
+echo -e "${CYAN}Shortlist${NC} ${DIM}— starting up${NC}"
+
+# Check Docker is installed
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}✗ Docker not found.${NC}"
+    echo "Install Docker Desktop from https://docker.com/products/docker-desktop"
+    exit 1
+fi
+
+# Check Docker daemon is running
+if ! docker info &> /dev/null; then
+    echo -e "${RED}✗ Docker daemon not running.${NC}"
+    echo "Start Docker Desktop and try again."
+    exit 1
+fi
+
+# Check Postgres container
+if ! docker compose ps postgres 2>/dev/null | grep -q "running\|healthy"; then
+    echo -e "${DIM}Starting Postgres...${NC}"
+    docker compose up -d postgres
+    
+    echo -e "${DIM}Waiting for database to be ready...${NC}"
+    timeout=30
+    while ! docker compose exec -T postgres pg_isready -U copilot -d job_copilot &>/dev/null; do
+        sleep 1
+        timeout=$((timeout - 1))
+        if [ $timeout -le 0 ]; then
+            echo -e "${RED}✗ Database failed to start within 30s.${NC}"
+            echo "Check: docker compose logs postgres"
+            exit 1
+        fi
+    done
+    echo -e "${GREEN}✓ Database ready${NC}"
+fi
+
+# Check uv is installed
+if ! command -v uv &> /dev/null; then
+    echo -e "${RED}✗ uv not found.${NC}"
+    echo "Install: curl -LsSf https://astral.sh/uv/install.sh | sh"
+    exit 1
+fi
+
+# Check dependencies are installed
+if [ ! -d ".venv" ]; then
+    echo -e "${DIM}Installing dependencies...${NC}"
+    uv sync
+fi
+
+# Check user files exist
+missing_files=()
+
+if [ ! -f "config.yaml" ]; then
+    missing_files+=("config.yaml")
+fi
+if [ ! -f "experience.md" ]; then
+    missing_files+=("experience.md")
+fi
+if [ ! -f "resume/resume.tex" ]; then
+    missing_files+=("resume/resume.tex")
+fi
+if [ ! -f ".env" ]; then
+    missing_files+=(".env")
+fi
+
+if [ ${#missing_files[@]} -gt 0 ]; then
+    echo
+    echo -e "${YELLOW}Missing user files:${NC}"
+    for f in "${missing_files[@]}"; do
+        echo "  • $f"
+    done
+    echo
+    echo -e "${CYAN}First-time setup needed:${NC}"
+    echo
+    if [[ " ${missing_files[*]} " =~ " config.yaml " ]]; then
+        echo "  cp config.example.yaml config.yaml"
+        echo "  # Then edit config.yaml — set your details and choose llm.provider"
+        echo "  # Supported providers: anthropic, openai, gemini"
+        echo
+    fi
+    if [[ " ${missing_files[*]} " =~ " experience.md " ]]; then
+        echo "  cp experience.example.md experience.md"
+        echo "  # Then write your full career corpus"
+        echo
+    fi
+    if [[ " ${missing_files[*]} " =~ " resume/resume.tex " ]]; then
+        echo "  # Save your LaTeX resume to resume/resume.tex"
+        echo
+    fi
+    if [[ " ${missing_files[*]} " =~ " .env " ]]; then
+        echo "  # Set the API key for your LLM provider:"
+        echo "  #   Anthropic:  ANTHROPIC_API_KEY=sk-ant-..."
+        echo "  #   OpenAI:     OPENAI_API_KEY=sk-..."
+        echo "  #   Gemini:     GEMINI_API_KEY=..."
+        echo "  # The provider is selected in config.yaml under 'llm.provider'"
+        echo
+    fi
+    echo "Run ./shortlist again once these are in place."
+    exit 1
+fi
+
+# Validate the API key matches the configured provider
+provider=$(grep -E '^\s*provider:' config.yaml | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+
+case "$provider" in
+    anthropic)
+        if ! grep -qE "^ANTHROPIC_API_KEY=.+" .env; then
+            echo -e "${YELLOW}⚠  ANTHROPIC_API_KEY not set in .env${NC}"
+            echo "  Provider 'anthropic' is configured in config.yaml."
+            echo "  Add: ANTHROPIC_API_KEY=sk-ant-..."
+            exit 1
+        fi
+        ;;
+    openai)
+        if ! grep -qE "^OPENAI_API_KEY=.+" .env; then
+            echo -e "${YELLOW}⚠  OPENAI_API_KEY not set in .env${NC}"
+            echo "  Provider 'openai' is configured in config.yaml."
+            echo "  Add: OPENAI_API_KEY=sk-..."
+            exit 1
+        fi
+        ;;
+    gemini)
+        if ! grep -qE "^GEMINI_API_KEY=.+" .env; then
+            echo -e "${YELLOW}⚠  GEMINI_API_KEY not set in .env${NC}"
+            echo "  Provider 'gemini' is configured in config.yaml."
+            echo "  Add: GEMINI_API_KEY=..."
+            exit 1
+        fi
+        ;;
+    "")
+        echo -e "${YELLOW}⚠  No 'provider' set in config.yaml${NC}"
+        echo "  Set llm.provider to one of: anthropic, openai, gemini"
+        exit 1
+        ;;
+    *)
+        echo -e "${YELLOW}⚠  Unknown LLM provider: ${provider}${NC}"
+        echo "  Set llm.provider in config.yaml to one of: anthropic, openai, gemini"
+        exit 1
+        ;;
+esac
+
+# All checks passed — start the app
+echo -e "${GREEN}✓ All checks passed${NC}"
+echo
+exec uv run python main.py

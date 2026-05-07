@@ -2,6 +2,23 @@
 
 Multi-agent job search copilot for senior engineers in Bangalore. Scores offers across 8 dimensions, detects role archetypes, tailors LaTeX resumes per JD, and tracks everything in Postgres. Built with Claude, Pydantic, and plain Python — no frameworks.
 
+## Quick start
+
+```bash
+git clone https://github.com/tusharjayanti/shortlist.git
+cd shortlist
+./shortlist
+```
+
+First run will prompt you to:
+- Copy `config.example.yaml` to `config.yaml` and edit
+- Copy `experience.example.md` to `experience.md` and write your corpus
+- Add your LaTeX resume to `resume/resume.tex`
+- Set your LLM provider's API key in `.env`
+  (Anthropic, OpenAI, or Gemini — picked in `config.yaml`)
+
+Subsequent runs boot directly into the menu.
+
 ## Prerequisites
 
 - Python 3.11+

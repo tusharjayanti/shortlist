@@ -225,6 +225,18 @@ class JobTracker:
                 )
                 return {row["grade"]: row["n"] for row in cur.fetchall()}
 
+    def get_recent_applications(self, limit: int = 20) -> list[dict]:
+        """Return the most recent applications across all statuses."""
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, company, role, score, grade, status, created_at "
+                    "FROM applications ORDER BY created_at DESC LIMIT %s",
+                    (limit,),
+                )
+                cols = [d[0] for d in cur.description]
+                return [dict(zip(cols, row)) for row in cur.fetchall()]
+
     def get_token_usage_by_agent(self) -> dict[str, dict]:
         """
         Return {agent: {calls: int, total_tokens: int}}.
